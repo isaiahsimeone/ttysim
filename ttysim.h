@@ -9,17 +9,15 @@
 
 #include <sys/wait.h>
 
+#include <errno.h>
+#include <pthread.h>
+#include <pty.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <errno.h>
-#include <pty.h>
 #include <unistd.h>
-#include <pthread.h>
 
-
-/* Prototypes */
 void*               stdin_monitor(void*);
 void*               stdout_monitor(void*);
 void                spawn_terminal(char*);
@@ -27,6 +25,5 @@ void                child_signal_handler(void);
 void                finish_recording(void);
 void                fatal(const char*);
 void                warn(const char*);
-
 
 #endif /* TTYSIM_TTYSIM_H */

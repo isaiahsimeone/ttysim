@@ -1,27 +1,28 @@
 #define _GNU_SOURCE
 
-
 #include "ttysim.h"
 
-
 pthread_mutex_t recording_lock;
-int master;
-int slave;
-pid_t child_pid;
-struct termios original_term;
+struct termios  original_term;
+pid_t           child_pid;
+int             master;
+int             slave;
 
+/*
+ * Usage: ./ttysim
+ */
 int main(int argc, char** argv) {
+    struct termios termset;
+    struct winsize winsize;
+
     char* shell = getenv("SHELL");
     if (!shell) {
         warn("SHELL is not defined. Defaulting to /bin/bash");
         shell = "/bin/bash";
     }
 
-    struct termios termset;
-    struct winsize winsize;
-
     /* New pseudoterminal master */
-    if ((master = getpt()) < 0)
+    if ((master = getpt()) == -1)
         fatal("call to getpt() failed");
 
     /* Query term parameters */
@@ -62,6 +63,9 @@ int main(int argc, char** argv) {
     return EXIT_SUCCESS;
 }
 
+/*
+ * Plumb and spawn the specified shell
+ */
 void spawn_terminal(char* shell) {
     setsid();
     ioctl(slave, TIOCSCTTY, 0);
@@ -77,6 +81,9 @@ void spawn_terminal(char* shell) {
     fatal("execl() failure");
 }
 
+/*
+ * Get stdin from the parent and pass to the slave terminal
+ */
 void* stdin_monitor(void* targs) {
     printf("stdin monitor up\n");
 
@@ -92,9 +99,13 @@ void* stdin_monitor(void* targs) {
         memset(input, 0, BUFFER_SZ);
     }
 
-    return NULL; /* Not reached */
+    return NULL; /* Satisfy GCC */
 }
 
+/*
+ * Write the slave terminal's output to our (the parents)
+ * stdout stream, then write to the recording file.
+ */
 void* stdout_monitor(void* targs) {
     printf("stdout monitor up\n");
 
@@ -115,13 +126,19 @@ void* stdout_monitor(void* targs) {
     return NULL; /* Satisfy GCC */
 }
 
-
+/*
+ * Wait for the child pty host to die.
+ */
 void child_signal_handler() {
     int stat;
     if (waitpid(child_pid, &stat, WNOHANG) == child_pid)
         finish_recording();
 }
 
+/*
+ * Save the recorded session to disk. Restore the original terminal
+ * parameters & exit.
+ */
 void finish_recording() {
     // Save recording
 
@@ -129,13 +146,18 @@ void finish_recording() {
     exit(EXIT_SUCCESS);
 }
 
-
+/*
+ * Fatal error
+ */
 void fatal(const char* msg) {
     fprintf(stderr, COL_RED "Error: " COL_RESET "%s (%s)\n", msg, strerror(errno));
     kill(child_pid, SIGINT);
     kill(0, SIGINT);
 }
 
+/*
+ * Pretty warning
+ */
 void warn(const char* msg) {
     fprintf(stderr, COL_YELLOW "Warning: " COL_RESET "%s\n", msg);
 }
