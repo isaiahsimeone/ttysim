@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -pedantic -std=c99
+CFLAGS=-Wall -pedantic -std=c99 -g
 DEPS = ttysim.h
 OBJ = ttysim.o
 LIBS = -pthread

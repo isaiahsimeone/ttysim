@@ -7,23 +7,50 @@ struct termios  original_term;
 pid_t           child_pid;
 int             master;
 int             slave;
+int             out_file;
+int             tmp_file;
+uint64_t        recording_start_time;
 
 /*
- * Usage: ./ttysim
+ * Usage: ./ttysim [output_file_name]
  */
 int main(int argc, char** argv) {
     struct termios termset;
     struct winsize winsize;
 
+    char* output_file_name;
     char* shell = getenv("SHELL");
+
     if (!shell) {
         warn("SHELL is not defined. Defaulting to /bin/bash");
         shell = "/bin/bash";
     }
 
-    /* New pseudoterminal master */
+    /* Set output filename */
+    if (argc >= 2)
+        output_file_name = argv[1];
+    else
+        get_date_time_string_now(&output_file_name);
+
+    /* Create/Open file */
+  //  if ((out_file = open(output_file_name, O_CREAT | O_RDWR) == -1))
+  //      fatal("Unable to open output file");
+
+    printf("OUTPUT STRING = %s\n", output_file_name);
+
+    /* Create working /tmp file */
+    char name_buf[TMP_NAME_LEN];
+    strncpy(name_buf, "/tmp/ttysimXXXXXX", TMP_NAME_LEN);
+    if ((tmp_file = mkstemp(name_buf)) == -1)
+        fatal("Unable to create /tmp file for recording");
+
+    /* New pseudo-terminal master */
     if ((master = getpt()) == -1)
         fatal("call to getpt() failed");
+
+    /* Get time at which recording begins (in ms) */
+    recording_start_time = 0;
+    recording_start_time = ms_since_recording_began();
 
     /* Query term parameters */
     tcgetattr(STDIN_FILENO, &original_term);
@@ -34,7 +61,6 @@ int main(int argc, char** argv) {
     cfmakeraw(&termset); /* Raw mode - no echo */
     termset.c_lflag &= ~ECHO;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &termset);
-
 
     if (openpty(&master, &slave, NULL, &original_term, &winsize) == -1)
         fatal("openpty() failed");
@@ -52,6 +78,7 @@ int main(int argc, char** argv) {
             /* Not reached */
         case -1:
             fatal("Failed to fork");
+            /* Not reached */
         default: /* Parent */
             pthread_create(&tid_stdout, 0, stdout_monitor, NULL);
             pthread_create(&tid_stdin, 0, stdin_monitor, NULL);
@@ -89,12 +116,19 @@ void* stdin_monitor(void* targs) {
 
     close(slave);
 
+    EventHeader* header = malloc(sizeof(EventHeader));
+    memset(header, 0, sizeof(EventHeader));
+
     int read_sz;
     char input[BUFFER_SZ];
     while ((read_sz = read(STDIN_FILENO, input, BUFFER_SZ)) > 0) {
         pthread_mutex_lock(&recording_lock);
+        generate_header(header, read_sz, STDIN_FILENO);
         write(master, input, read_sz);
-       // printf("%s", input);
+        /* Write header to tmp file */
+        write(tmp_file, header, sizeof(EventHeader));
+        /* Write content to tmp file */
+        write(tmp_file, input, read_sz);
         pthread_mutex_unlock(&recording_lock);
         memset(input, 0, BUFFER_SZ);
     }
@@ -111,12 +145,19 @@ void* stdout_monitor(void* targs) {
 
     close(slave);
 
+    EventHeader* header = malloc(sizeof(EventHeader));
+    memset(header, 0, sizeof(EventHeader));
+
     int read_sz;
     char output[BUFFER_SZ];
     while ((read_sz = read(master, output, BUFFER_SZ)) > 0) {
         pthread_mutex_lock(&recording_lock);
+        generate_header(header, read_sz, STDOUT_FILENO);
         write(STDOUT_FILENO, output, read_sz);
-        //printf("%s", output);
+        /* Write header to tmp */
+        write(tmp_file, header, sizeof(EventHeader));
+        /* Write content to tmp */
+        write(tmp_file, output, read_sz);
         pthread_mutex_unlock(&recording_lock);
         memset(output, 0, BUFFER_SZ);
     }
@@ -141,9 +182,45 @@ void child_signal_handler() {
  */
 void finish_recording() {
     // Save recording
-
+    fsync(tmp_file);
+    close(tmp_file);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_term);
     exit(EXIT_SUCCESS);
+}
+
+int generate_header(EventHeader* eh, uint64_t len, int stream) {
+    memset(eh, 0, sizeof(EventHeader));
+    eh->len = len;
+    eh->time = ms_since_recording_began();
+    eh->stream = stream;
+    return 1;
+}
+
+uint64_t ms_since_recording_began() {
+    struct timespec tspec;
+    clock_gettime(CLOCK_REALTIME, &tspec);
+
+    uint64_t time_now_ms = tspec.tv_sec * 1000 + tspec.tv_nsec / 1000;
+
+    return time_now_ms - recording_start_time;
+}
+
+/*
+ * Create a date+time string with the current date+time
+ * Returned format is YYYY-MM-DD_HHmmss
+ */
+void get_date_time_string_now(char** dest) {
+    int str_len = 18; //strlen("YYYY-MM-DD_HHmmss") + 1;
+    time_t t_now = time(NULL);
+    struct tm tm = *localtime(&t_now);
+    char* dt_string = malloc(sizeof(char) * str_len);
+    memset(dt_string, 0, sizeof(char) * str_len);
+
+    if (snprintf(dt_string, str_len, "%04d-%02d-%02d_%02d%02d%02d", tm.tm_year + 1900,
+                 tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec) < 0)
+        strncpy(dt_string, "ttysim.out", str_len); /* Fallback name */
+
+    *dest = dt_string;
 }
 
 /*
