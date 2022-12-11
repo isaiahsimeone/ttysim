@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
 
     /* Query term parameters */
     tcgetattr(STDIN_FILENO, &original_term);
-    ioctl(STDIN_FILENO, TIOCGWINSZ, (char*&)winsize);
+    ioctl(STDIN_FILENO, TIOCGWINSZ, (char*)&winsize);
 
     /* Set term parameters */
     termset = original_term;
@@ -85,7 +85,6 @@ int main(int argc, char** argv) {
 
     pthread_join(tid_stdout, 0);
     pthread_join(tid_stdin, 0);
-
 
     return EXIT_SUCCESS;
 }
