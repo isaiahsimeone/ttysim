@@ -9,7 +9,7 @@ int             master;
 int             slave;
 int             out_file;
 int             tmp_file;
-uint64_t        recording_start_time;
+struct timespec recording_start_time;
 
 /*
  * Usage: ./ttysim [output_file_name]
@@ -48,13 +48,12 @@ int main(int argc, char** argv) {
     if ((master = getpt()) == -1)
         fatal("call to getpt() failed");
 
-    /* Get time at which recording begins (in ms) */
-    recording_start_time = 0;
-    recording_start_time = ms_since_recording_began();
+    /* Initialise recording_start_time */
+    clock_gettime(CLOCK_MONOTONIC, &recording_start_time);
 
     /* Query term parameters */
     tcgetattr(STDIN_FILENO, &original_term);
-    ioctl(STDIN_FILENO, TIOCGWINSZ, (char*)&winsize);
+    ioctl(STDIN_FILENO, TIOCGWINSZ, (char*&)winsize);
 
     /* Set term parameters */
     termset = original_term;
@@ -86,6 +85,7 @@ int main(int argc, char** argv) {
 
     pthread_join(tid_stdout, 0);
     pthread_join(tid_stdin, 0);
+
 
     return EXIT_SUCCESS;
 }
@@ -197,12 +197,15 @@ int generate_header(EventHeader* eh, uint64_t len, int stream) {
 }
 
 uint64_t ms_since_recording_began() {
-    struct timespec tspec;
-    clock_gettime(CLOCK_REALTIME, &tspec);
+    // Get the current time using the clock_gettime() function
+    struct timespec current_time;
+    clock_gettime(CLOCK_MONOTONIC, &current_time);
 
-    uint64_t time_now_ms = tspec.tv_sec * 1000 + tspec.tv_nsec / 1000;
+    // Calculate the elapsed time in milliseconds
+    uint64_t elapsed_time_ms = (current_time.tv_sec - recording_start_time.tv_sec) * 1000 +
+                               (current_time.tv_nsec - recording_start_time.tv_nsec) / 1000000;
 
-    return time_now_ms - recording_start_time;
+    return elapsed_time_ms;
 }
 
 /*

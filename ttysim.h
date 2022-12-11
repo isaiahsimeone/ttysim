@@ -23,9 +23,9 @@
 #include <unistd.h>
 
 typedef struct {
-    uint32_t    len;    /* Length of event data which follows header - max event length ~4 billion chars */
-    uint32_t    time;   /* Time of event in ms (since recording began) - Max recording ~49 days */
-    int         stream; /* STDIN/STDOUT */
+    uint64_t    len;    /* Length of event data which follows header - max event length ~4 billion chars */
+    uint64_t    time;   /* Time of event in ms (since recording began) - Max recording ~49 days */
+    uint8_t     stream; /* STDIN/STDOUT */
 } EventHeader;
 
 void*               stdin_monitor(void*);
